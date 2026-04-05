@@ -1,0 +1,112 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  password  String
+  role      Role     @default(USER)
+  
+  registrations MessRegistration[]
+  signOffs      SignOff[]
+  addOns        AddOn[]
+  guestRequests GuestRequest[]
+  feeRecords    FeeRecord[]
+  payments      Payment[]
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+model Mess {
+  id        Int      @id @default(autoincrement())
+  name      String
+  capacity  Int
+
+  registrations MessRegistration[]
+  schedules     MenuSchedule[]
+}
+
+model MessRegistration {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  messId    Int
+
+  user      User     @relation(fields: [userId], references: [id])
+  mess      Mess     @relation(fields: [messId], references: [id])
+}
+
+model MenuItem {
+  id        Int      @id @default(autoincrement())
+  name      String
+  price     Float
+
+  schedules MenuSchedule[]
+  addOns    AddOn[]
+}
+
+model MenuSchedule {
+  id        Int      @id @default(autoincrement())
+  messId    Int
+  day       String
+  mealType  String
+  itemId    Int
+
+  mess      Mess     @relation(fields: [messId], references: [id])
+  item      MenuItem @relation(fields: [itemId], references: [id])
+}
+
+model SignOff {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  startDate DateTime
+  endDate   DateTime
+
+  user      User     @relation(fields: [userId], references: [id])
+}
+
+model AddOn {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  itemId    Int
+  quantity  Int
+
+  user      User     @relation(fields: [userId], references: [id])
+  item      MenuItem @relation(fields: [itemId], references: [id])
+}
+
+model FeeRecord {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  totalAmount Float
+  status      String   @default("PENDING") // e.g., PENDING, PAID
+
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model Payment {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  amount      Float
+
+  user        User     @relation(fields: [userId], references: [id])
+}
+
+model GuestRequest {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  guestRollNo String
+  date        DateTime
+  mealType  String   // e.g., Breakfast, Lunch, Dinner
+  status    String   @default("PENDING")
+
+  user      User     @relation(fields: [userId], references: [id])
+}
