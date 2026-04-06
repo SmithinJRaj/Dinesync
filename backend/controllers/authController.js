@@ -1,6 +1,6 @@
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const prisma = require('../prisma');
+const pool = require('../db');
 
 // Generate JWT token
 const generateToken = (id, role) => {
@@ -21,11 +21,9 @@ const signup = async (req, res) => {
     }
 
     // Check if user exists
-    const userExists = await prisma.user.findUnique({
-      where: { username },
-    });
+    const userExists = await pool.query(`SELECT id FROM "User" WHERE username = $1`, [username]);
 
-    if (userExists) {
+    if (userExists.rows.length > 0) {
       return res.status(400).json({ message: 'User already exists' });
     }
 
@@ -34,14 +32,12 @@ const signup = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, salt);
 
     // Create user
-    const user = await prisma.user.create({
-      data: {
-        username,
-        password: hashedPassword,
-        // Allow passing role for MVP simplicity (in prod, only admins should assign roles)
-        role: role || 'USER',
-      },
-    });
+    const insertResult = await pool.query(
+      `INSERT INTO "User" (username, password, role) VALUES ($1, $2, $3) RETURNING id, username, role`,
+      [username, hashedPassword, role || 'USER']
+    );
+
+    const user = insertResult.rows[0];
 
     if (user) {
       res.status(201).json({
@@ -67,9 +63,8 @@ const login = async (req, res) => {
     const { username, password } = req.body;
 
     // Check for user
-    const user = await prisma.user.findUnique({
-      where: { username },
-    });
+    const result = await pool.query(`SELECT * FROM "User" WHERE username = $1`, [username]);
+    const user = result.rows[0];
 
     if (user && (await bcrypt.compare(password, user.password))) {
       res.json({
@@ -92,10 +87,8 @@ const login = async (req, res) => {
 // @access  Admin
 const getAllUsers = async (req, res) => {
   try {
-    const users = await prisma.user.findMany({
-      select: { id: true, username: true, role: true }
-    });
-    res.json(users);
+    const users = await pool.query(`SELECT id, username, role FROM "User"`);
+    res.json(users.rows);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error fetching users' });

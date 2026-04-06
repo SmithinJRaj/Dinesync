@@ -107,6 +107,10 @@ export default function GuestPage() {
      return new Date(isoStr).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
   };
 
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const minDate = tomorrow.toISOString().split('T')[0];
+
   return (
     <div className="max-w-[1200px] mt-2 mb-10 pb-10">
       {toast && (
@@ -213,6 +217,7 @@ export default function GuestPage() {
                       <input 
                         type="date"
                         required
+                        min={minDate}
                         value={date}
                         onChange={(e) => setDate(e.target.value)}
                         className="w-full bg-gray-50/50 border border-gray-200 rounded-2xl px-5 py-4 focus:ring-2 focus:ring-blue-100 outline-none transition font-medium text-gray-800"

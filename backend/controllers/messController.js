@@ -1,4 +1,4 @@
-const prisma = require('../prisma');
+const pool = require('../db');
 
 // @desc    Create a new mess
 // @route   POST /api/mess
@@ -9,10 +9,11 @@ const createMess = async (req, res) => {
     if (!name || capacity == null) {
       return res.status(400).json({ message: 'Name and capacity are required' });
     }
-    const mess = await prisma.mess.create({
-      data: { name, capacity: parseInt(capacity) },
-    });
-    res.status(201).json(mess);
+    const result = await pool.query(
+      `INSERT INTO "Mess" (name, capacity) VALUES ($1, $2) RETURNING *`,
+      [name, parseInt(capacity)]
+    );
+    res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error creating mess' });
@@ -27,22 +28,20 @@ const registerMess = async (req, res) => {
     const { messId } = req.params;
     
     // Check if user is already registered to a mess
-    const existingReq = await prisma.messRegistration.findFirst({
-      where: { userId: req.user.id }
-    });
-    if (existingReq) {
+    const existingReq = await pool.query(`SELECT * FROM "MessRegistration" WHERE "userId" = $1`, [req.user.id]);
+    if (existingReq.rows.length > 0) {
       return res.status(400).json({ message: 'User already registered to a mess' });
     }
 
-    const registration = await prisma.messRegistration.create({
-      data: {
-        userId: req.user.id,
-        messId: parseInt(messId),
-      },
-      include: {
-        mess: true
-      }
-    });
+    const registrationResult = await pool.query(
+      `INSERT INTO "MessRegistration" ("userId", "messId") VALUES ($1, $2) RETURNING *`,
+      [req.user.id, parseInt(messId)]
+    );
+
+    const messResult = await pool.query(`SELECT * FROM "Mess" WHERE id = $1`, [parseInt(messId)]);
+    const registration = registrationResult.rows[0];
+    registration.mess = messResult.rows[0];
+
     res.status(201).json(registration);
   } catch (error) {
     console.error(error);
@@ -55,8 +54,8 @@ const registerMess = async (req, res) => {
 // @access  User
 const getMesses = async (req, res) => {
   try {
-    const messes = await prisma.mess.findMany();
-    res.json(messes);
+    const result = await pool.query(`SELECT * FROM "Mess"`);
+    res.json(result.rows);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error fetching messes' });
@@ -68,16 +67,15 @@ const getMesses = async (req, res) => {
 // @access  User
 const getMyRegistration = async (req, res) => {
   try {
-    const registration = await prisma.messRegistration.findFirst({
-      where: { userId: req.user.id },
-      include: { mess: true }
-    });
+    const regResult = await pool.query(`SELECT * FROM "MessRegistration" WHERE "userId" = $1`, [req.user.id]);
+    const registration = regResult.rows[0];
     
     if (!registration) {
       return res.json({ registered: false });
     }
 
-    res.json({ registered: true, mess: registration.mess });
+    const messResult = await pool.query(`SELECT * FROM "Mess" WHERE id = $1`, [registration.messId]);
+    res.json({ registered: true, mess: messResult.rows[0] });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error fetching registration: ' + error.message });
@@ -92,9 +90,9 @@ const resetMonthlyCycle = async (req, res) => {
     const userId = req.user.id;
     
     // Purge user's payments & sign-offs & reg to cleanly fake "Next Month"
-    await prisma.payment.deleteMany({ where: { userId } });
-    await prisma.signOff.deleteMany({ where: { userId } });
-    await prisma.messRegistration.deleteMany({ where: { userId } });
+    await pool.query(`DELETE FROM "Payment" WHERE "userId" = $1`, [userId]);
+    await pool.query(`DELETE FROM "SignOff" WHERE "userId" = $1`, [userId]);
+    await pool.query(`DELETE FROM "MessRegistration" WHERE "userId" = $1`, [userId]);
     
     res.json({ message: 'Cycle cleanly reset' });
   } catch (error) {

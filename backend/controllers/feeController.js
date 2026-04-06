@@ -1,4 +1,4 @@
-const prisma = require('../prisma');
+const pool = require('../db');
 
 // @desc    Calculate and viewing fee for current user
 // @route   GET /api/fees/my-fee
@@ -7,9 +7,9 @@ const calculateMyFee = async (req, res) => {
   try {
     const userId = req.user.id;
     
-    const registration = await prisma.messRegistration.findFirst({
-       where: { userId }
-    });
+    // Postgres returns exact casing or lowercase, double quotes are required for CamelCase tables
+    const registrationResult = await pool.query(`SELECT * FROM "MessRegistration" WHERE "userId" = $1`, [userId]);
+    const registration = registrationResult.rows[0];
     
     if (!registration) {
        return res.status(403).json({ message: 'User is not registered to any mess' });
@@ -17,18 +17,19 @@ const calculateMyFee = async (req, res) => {
 
     const BASE_PRICE = 3000;
     
-    const signOffs = await prisma.signOff.findMany({
-      where: { userId }
-    });
+    const signOffsResult = await pool.query(`SELECT * FROM "SignOff" WHERE "userId" = $1`, [userId]);
+    const signOffs = signOffsResult.rows;
 
     let signOffDays = 0;
     signOffs.forEach((so) => {
-      const diffTime = Math.abs(so.endDate - so.startDate);
+      // Postgres returns Date objects for TIMESTAMP columns
+      const diffTime = Math.abs(new Date(so.endDate) - new Date(so.startDate));
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
       signOffDays += (diffDays + 1); 
     });
 
-    const payments = await prisma.payment.findMany({ where: { userId } });
+    const paymentsResult = await pool.query(`SELECT amount FROM "Payment" WHERE "userId" = $1`, [userId]);
+    const payments = paymentsResult.rows;
     const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
 
     const perDayCost = BASE_PRICE / 30;
@@ -60,14 +61,11 @@ const generateFeeRecord = async (req, res) => {
       return res.status(400).json({ message: 'Total amount is required' });
     }
     
-    const record = await prisma.feeRecord.create({
-      data: {
-        userId,
-        totalAmount: parseFloat(totalAmount),
-        status: 'PENDING'
-      }
-    });
-    res.status(201).json(record);
+    const result = await pool.query(
+      `INSERT INTO "FeeRecord" ("userId", "totalAmount", status) VALUES ($1, $2, 'PENDING') RETURNING *`,
+      [userId, parseFloat(totalAmount)]
+    );
+    res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error generating fee record' });
@@ -86,14 +84,12 @@ const processPayment = async (req, res) => {
       return res.status(400).json({ message: 'Valid payment amount is required' });
     }
 
-    const payment = await prisma.payment.create({
-      data: {
-        userId,
-        amount: parseFloat(amount)
-      }
-    });
+    const result = await pool.query(
+      `INSERT INTO "Payment" ("userId", amount) VALUES ($1, $2) RETURNING *`,
+      [userId, parseFloat(amount)]
+    );
 
-    res.status(201).json(payment);
+    res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error processing payment: ' + error.message, stack: error.stack  });
@@ -106,11 +102,8 @@ const processPayment = async (req, res) => {
 const getMyPayments = async (req, res) => {
   try {
     const userId = req.user.id;
-    const payments = await prisma.payment.findMany({
-      where: { userId },
-      orderBy: { id: 'desc' }
-    });
-    res.json(payments);
+    const result = await pool.query(`SELECT * FROM "Payment" WHERE "userId" = $1 ORDER BY id DESC`, [userId]);
+    res.json(result.rows);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error fetching payment records: ' + error.message, stack: error.stack });

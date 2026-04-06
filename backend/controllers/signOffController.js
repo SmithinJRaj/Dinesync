@@ -1,4 +1,4 @@
-const prisma = require('../prisma');
+const pool = require('../db');
 
 // @desc    Submit a sign-off
 // @route   POST /api/signoffs
@@ -6,9 +6,8 @@ const prisma = require('../prisma');
 const submitSignOff = async (req, res) => {
   try {
     const userId = req.user.id;
-    const registration = await prisma.messRegistration.findFirst({
-       where: { userId }
-    });
+    const regResult = await pool.query(`SELECT * FROM "MessRegistration" WHERE "userId" = $1`, [userId]);
+    const registration = regResult.rows[0];
     
     if (!registration) {
        return res.status(403).json({ message: 'User is not registered to any mess' });
@@ -19,15 +18,12 @@ const submitSignOff = async (req, res) => {
       return res.status(400).json({ message: 'Start and end dates are required' });
     }
 
-    const signOff = await prisma.signOff.create({
-      data: {
-        userId: req.user.id,
-        startDate: new Date(startDate),
-        endDate: new Date(endDate)
-      }
-    });
+    const result = await pool.query(
+      `INSERT INTO "SignOff" ("userId", "startDate", "endDate") VALUES ($1, $2, $3) RETURNING *`,
+      [req.user.id, new Date(startDate), new Date(endDate)]
+    );
 
-    res.status(201).json(signOff);
+    res.status(201).json(result.rows[0]);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error submitting sign-off' });
@@ -40,19 +36,15 @@ const submitSignOff = async (req, res) => {
 const getSignOffs = async (req, res) => {
   try {
     const userId = req.user.id;
-    const registration = await prisma.messRegistration.findFirst({
-       where: { userId }
-    });
+    const regResult = await pool.query(`SELECT * FROM "MessRegistration" WHERE "userId" = $1`, [userId]);
+    const registration = regResult.rows[0];
     
     if (!registration) {
        return res.status(403).json({ message: 'User is not registered to any mess' });
     }
 
-    const signOffs = await prisma.signOff.findMany({
-      where: { userId },
-      orderBy: { startDate: 'desc' }
-    });
-    res.json(signOffs);
+    const result = await pool.query(`SELECT * FROM "SignOff" WHERE "userId" = $1 ORDER BY "startDate" DESC`, [userId]);
+    res.json(result.rows);
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error fetching sign-offs' });
