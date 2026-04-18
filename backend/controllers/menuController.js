@@ -52,12 +52,18 @@ const createMenuSchedule = async (req, res) => {
 const getMenu = async (req, res) => {
   try {
     const userId = req.user.id;
+    let targetMessId = req.query.messId ? parseInt(req.query.messId) : null;
     
-    const registrationResult = await pool.query(`SELECT * FROM "MessRegistration" WHERE "userId" = $1`, [userId]);
-    const registration = registrationResult.rows[0];
+    if (!targetMessId) {
+      const registrationResult = await pool.query(`SELECT * FROM "MessRegistration" WHERE "userId" = $1`, [userId]);
+      const registration = registrationResult.rows[0];
 
-    if (!registration) {
-       return res.status(403).json({ message: 'User is not registered to any mess' });
+      if (registration) {
+         targetMessId = registration.messId;
+      } else {
+         const firstMessResult = await pool.query(`SELECT id FROM "Mess" ORDER BY id ASC LIMIT 1`);
+         targetMessId = firstMessResult.rows[0]?.id || 1;
+      }
     }
 
     const rawMenuResult = await pool.query(`
@@ -65,10 +71,9 @@ const getMenu = async (req, res) => {
       FROM "MenuSchedule" ms
       JOIN "MenuItem" mi ON ms."itemId" = mi.id
       WHERE ms."messId" = $1
-    `, [registration.messId]);
+    `, [targetMessId]);
     
     const rawMenu = rawMenuResult.rows.map(row => {
-       // Format to match prisma struct
        return {
           id: row.id,
           messId: row.messId,
@@ -92,7 +97,7 @@ const getMenu = async (req, res) => {
        groupedMenu[entry.day].push(entry);
     });
 
-    res.json(groupedMenu);
+    res.json({ schedule: groupedMenu, messId: targetMessId });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error fetching menu' });

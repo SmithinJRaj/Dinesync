@@ -152,17 +152,39 @@ export default function FeesPage() {
               <h2 className="text-2xl font-bold text-gray-900 mb-8">Current Cycle Breakdown</h2>
               
               <div className="space-y-6">
-                 <div className="flex justify-between items-center pb-6 border-b border-gray-100">
-                    <p className="font-semibold text-gray-700">Base Subscription (Current Tier)</p>
-                    <p className="font-bold text-gray-900 text-lg">₹{feeData?.basePrice ? feeData.basePrice.toFixed(2) : '3000.00'}</p>
-                 </div>
-                 <div className="flex justify-between items-center pb-6 border-b border-gray-100">
-                    <div>
-                       <p className="font-semibold text-gray-700">Sign-off Deductions</p>
-                       <p className="text-xs text-gray-400 font-medium">{feeData?.signOffDays || 0} valid days registered</p>
-                    </div>
-                    <p className="font-bold text-green-600 text-lg">-₹{feeData?.deduction ? feeData.deduction.toFixed(2) : '0.00'}</p>
-                 </div>
+                 {feeData?.basePrice > 0 && (
+                   <div className="flex justify-between items-center pb-6 border-b border-gray-100">
+                      <p className="font-semibold text-gray-700">Base Subscription (Current Tier)</p>
+                      <p className="font-bold text-gray-900 text-lg">₹{feeData.basePrice.toFixed(2)}</p>
+                   </div>
+                 )}
+                 {feeData?.deduction > 0 && (
+                   <div className="flex justify-between items-center pb-6 border-b border-gray-100">
+                      <div>
+                         <p className="font-semibold text-gray-700">Sign-off Deductions</p>
+                         <p className="text-xs text-gray-400 font-medium">{feeData.signOffDays || 0} valid days registered</p>
+                      </div>
+                      <p className="font-bold text-green-600 text-lg">-₹{feeData.deduction.toFixed(2)}</p>
+                   </div>
+                 )}
+                 {feeData?.guestFees > 0 && (
+                   <div className="flex justify-between items-center pb-6 border-b border-gray-100">
+                      <div>
+                         <p className="font-semibold text-gray-700">Guest Services Total</p>
+                         <p className="text-xs text-gray-400 font-medium">Accumulated charges for guest access</p>
+                      </div>
+                      <p className="font-bold text-gray-900 text-lg">+₹{feeData.guestFees.toFixed(2)}</p>
+                   </div>
+                 )}
+                 {(feeData?.basePrice === 0 && feeData?.guestFees === 0) && (
+                   <div className="flex justify-between items-center pb-6 border-b border-gray-100">
+                      <div>
+                         <p className="font-semibold text-gray-700">No active charges</p>
+                         <p className="text-xs text-gray-400 font-medium">You are not registered to any mess and have 0 guest charges.</p>
+                      </div>
+                      <p className="font-bold text-gray-900 text-lg">₹0.00</p>
+                   </div>
+                 )}
                  <div className="flex justify-between items-center pt-4">
                     <p className="font-bold text-gray-400 uppercase tracking-widest text-sm">Monthly Total</p>
                     <p className="font-black text-gray-900 text-3xl">₹{billAmount}</p>

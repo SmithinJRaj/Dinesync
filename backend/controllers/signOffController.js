@@ -8,9 +8,9 @@ const submitSignOff = async (req, res) => {
     const userId = req.user.id;
     const regResult = await pool.query(`SELECT * FROM "MessRegistration" WHERE "userId" = $1`, [userId]);
     const registration = regResult.rows[0];
-    
+
     if (!registration) {
-       return res.status(403).json({ message: 'User is not registered to any mess' });
+      return res.status(403).json({ message: 'User is not registered to any mess' });
     }
 
     const { startDate, endDate } = req.body;
@@ -38,9 +38,9 @@ const getSignOffs = async (req, res) => {
     const userId = req.user.id;
     const regResult = await pool.query(`SELECT * FROM "MessRegistration" WHERE "userId" = $1`, [userId]);
     const registration = regResult.rows[0];
-    
+
     if (!registration) {
-       return res.status(403).json({ message: 'User is not registered to any mess' });
+      return res.status(403).json({ message: 'User is not registered to any mess' });
     }
 
     const result = await pool.query(`SELECT * FROM "SignOff" WHERE "userId" = $1 ORDER BY "startDate" DESC`, [userId]);
