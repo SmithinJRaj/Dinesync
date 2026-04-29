@@ -1,25 +1,34 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import Sidebar from '../../components/Sidebar';
 import { Search, Bell, CircleHelp } from 'lucide-react';
 
 export default function DashboardLayout({ children }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [loading, setLoading] = useState(true);
   const [username, setUsername] = useState('Chef');
 
   useEffect(() => {
     const token = localStorage.getItem('token');
     const storedName = localStorage.getItem('username');
+    const role = localStorage.getItem('role');
+    
     if (!token) {
       router.push('/login');
     } else {
-      if(storedName) setUsername(storedName);
-      setLoading(false);
+      if (role === 'ADMIN' && !pathname.startsWith('/admin')) {
+         router.push('/admin');
+      } else if (role === 'USER' && pathname.startsWith('/admin')) {
+         router.push('/user');
+      } else {
+         if(storedName) setUsername(storedName);
+         setLoading(false);
+      }
     }
-  }, [router]);
+  }, [router, pathname]);
 
   if (loading) return (
     <div className="flex h-screen bg-[#F9FAFB] items-center justify-center">

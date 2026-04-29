@@ -77,10 +77,10 @@ export default function GuestPage() {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          messId: parseInt(selectedMess),
+          mess_id: parseInt(selectedMess),
           guestRollNo,
-          date: new Date(date).toISOString(),
-          mealType: mealType
+          request_date: new Date(date).toISOString(),
+          meal_session: mealType
         })
       });
       const data = await res.json();
@@ -272,10 +272,10 @@ export default function GuestPage() {
                        <div key={record.id || idx} className="bg-white rounded-2xl p-5 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.03)] border border-gray-50">
                           <div className="flex justify-between items-start mb-2">
                              <div className="w-full">
-                                <h4 className="font-bold text-gray-900 mb-0.5">{record.guestRollNo}</h4>
+                                <h4 className="font-bold text-gray-900 mb-0.5">{record.guestRollNo || "Guest"}</h4>
                                 <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest flex justify-between w-full">
-                                  <span>{record.mealType}</span>
-                                  <span className="text-blue-500">{formatDate(record.date)}</span>
+                                  <span>{record.meal_session || record.mealType}</span>
+                                  <span className="text-blue-500">{formatDate(record.request_date || record.date)}</span>
                                 </p>
                              </div>
                           </div>

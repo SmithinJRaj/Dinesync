@@ -1,13 +1,14 @@
 "use client";
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { LayoutDashboard, Utensils, ClipboardList, LogOut, ReceiptText, Settings } from 'lucide-react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useState, Suspense } from 'react';
+import { LayoutDashboard, Utensils, ClipboardList, LogOut, ReceiptText, Settings, ShoppingBag, User, ShieldCheck } from 'lucide-react';
 
-export default function Sidebar() {
+function SidebarInner() {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [role, setRole] = useState(null);
 
   useEffect(() => {
@@ -22,36 +23,53 @@ export default function Sidebar() {
     router.push('/login');
   };
 
-  const navLinks = [
-    { name: 'Dashboard', icon: LayoutDashboard, href: '/user' },
-    { name: 'Menu', icon: Utensils, href: '/menu' },
-    { name: 'Registration', icon: ClipboardList, href: '/registration' },
-    { name: 'Sign-Off', icon: LogOut, href: '/sign-off' }, 
-    { name: 'Guest', icon: Utensils, href: '/guest' }, 
-    { name: 'Fees', icon: ReceiptText, href: '/fees' },
-  ];
+  const currentTab = searchParams.get('tab') || 'mess';
+
+  let navLinks = [];
 
   if (role === 'ADMIN') {
-    navLinks.push({ name: 'Admin', icon: Settings, href: '/admin' });
+    navLinks = [
+      { name: 'Mess Manager', icon: Settings, href: '/admin?tab=mess' },
+      { name: 'Menu Grid', icon: Utensils, href: '/admin?tab=menu' },
+      { name: 'Billing Epochs', icon: ReceiptText, href: '/admin?tab=billing' },
+      { name: 'Requests Central', icon: ClipboardList, href: '/admin?tab=requests' },
+      { name: 'Fee Ledgers', icon: ShoppingBag, href: '/admin?tab=fees' },
+      { name: 'Auth Identities', icon: User, href: '/admin?tab=users' }
+    ];
+  } else {
+    navLinks = [
+      { name: 'Dashboard', icon: LayoutDashboard, href: '/user' },
+      { name: 'Menu', icon: Utensils, href: '/menu' },
+      { name: 'Registration', icon: ClipboardList, href: '/registration' },
+      { name: 'Sign-Off', icon: LogOut, href: '/sign-off' }, 
+      { name: 'Guest', icon: Utensils, href: '/guest' }, 
+      { name: 'Fees', icon: ReceiptText, href: '/fees' },
+      { name: 'Add-Ons', icon: ShoppingBag, href: '/addons' },
+      { name: 'Profile', icon: User, href: '/profile' }
+    ];
   }
 
   return (
     <>
       {/* Desktop Sidebar */}
       <div className="hidden md:flex w-64 h-screen bg-[#F9FAFB] flex-col border-r border-gray-100 shrink-0">
-        <div className="p-8 pb-4 flex items-center space-x-3">
-          <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white shrink-0">
-            <Utensils size={20} />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-gray-900 leading-tight">DineSync</h1>
-            <p className="text-[9px] font-bold uppercase text-gray-400 tracking-widest mt-0.5">Culinary Concierge</p>
+        <div className="p-8 pb-4 flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+             <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white shrink-0">
+               <Utensils size={20} />
+             </div>
+             <div>
+               <h1 className="text-xl font-bold text-gray-900 leading-tight">DineSync</h1>
+               <p className="text-[9px] font-bold uppercase text-gray-400 tracking-widest mt-0.5">{role === 'ADMIN' ? 'Admin Console' : 'Culinary Concierge'}</p>
+             </div>
           </div>
         </div>
 
-        <nav className="flex-1 px-4 py-6 space-y-2">
+        <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
           {navLinks.map((link) => {
-            const isActive = pathname === link.href;
+            const isActive = link.href.includes('/admin') 
+                                ? link.href.includes(`tab=${currentTab}`) 
+                                : pathname === link.href;
             const Icon = link.icon;
             return (
               <Link
@@ -83,7 +101,7 @@ export default function Sidebar() {
       {/* Mobile Bottom Navigation */}
       <div className="md:hidden fixed bottom-0 w-full h-[4.5rem] bg-white border-t border-gray-100 shadow-[0_-5px_20px_rgba(0,0,0,0.04)] z-[100] flex items-center justify-around px-2 pb-safe">
           {navLinks.map((link) => {
-            const isActive = pathname === link.href;
+            const isActive = link.href.includes('/admin') ? link.href.includes(`tab=${currentTab}`) : pathname === link.href;
             const Icon = link.icon;
             return (
               <Link
@@ -94,15 +112,19 @@ export default function Sidebar() {
                 }`}
               >
                 <Icon size={22} className={isActive ? 'mb-1 text-blue-600' : 'mb-1'} />
-                <span className="text-[9px] font-bold tracking-tight text-center">{link.name}</span>
+                <span className="text-[9px] font-bold tracking-tight text-center truncate w-12">{link.name}</span>
               </Link>
             );
           })}
-          <button onClick={handleLogout} className="flex flex-col items-center justify-center w-14 h-14 rounded-full transition-all text-red-400 hover:text-red-600">
-             <LogOut size={22} className="mb-1" />
-             <span className="text-[9px] font-bold tracking-tight text-center">Logout</span>
-          </button>
       </div>
     </>
+  );
+}
+
+export default function Sidebar() {
+  return (
+    <Suspense fallback={<div className="hidden md:flex w-64 h-screen bg-[#F9FAFB] border-r border-gray-100"></div>}>
+       <SidebarInner />
+    </Suspense>
   );
 }

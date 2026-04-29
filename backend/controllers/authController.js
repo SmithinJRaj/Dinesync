@@ -21,7 +21,7 @@ const signup = async (req, res) => {
     }
 
     // Check if user exists
-    const userExists = await pool.query(`SELECT id FROM "User" WHERE username = $1`, [username]);
+    const userExists = await pool.query(`SELECT user_id FROM "Account" WHERE username = $1`, [username]);
 
     if (userExists.rows.length > 0) {
       return res.status(400).json({ message: 'User already exists' });
@@ -31,20 +31,35 @@ const signup = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    // Create user
+    const userRole = role === 'ADMIN' ? 'ADMIN' : 'USER';
+
+    // Create user in Account
     const insertResult = await pool.query(
-      `INSERT INTO "User" (username, password, role) VALUES ($1, $2, $3) RETURNING id, username, role`,
-      [username, hashedPassword, role || 'USER']
+      `INSERT INTO "Account" (username, password_hash, role, account_status) VALUES ($1, $2, $3, 'ACTIVE') RETURNING user_id, username, role`,
+      [username, hashedPassword, userRole]
     );
 
     const user = insertResult.rows[0];
 
+    // Insert into Student or Admin based on role
+    if (userRole === 'ADMIN') {
+        await pool.query(
+            `INSERT INTO "Admin" (admin_id, name, email, phone_number) VALUES ($1, $2, $3, $4)`,
+            [user.user_id, username, `${username}@dinesync.com`, '0000000000']
+        );
+    } else {
+        await pool.query(
+            `INSERT INTO "Student" (student_id, name, email, phone_number) VALUES ($1, $2, $3, $4)`,
+            [user.user_id, username, `${username}@dinesync.com`, '0000000000']
+        );
+    }
+
     if (user) {
       res.status(201).json({
-        id: user.id,
+        id: user.user_id,
         username: user.username,
         role: user.role,
-        token: generateToken(user.id, user.role),
+        token: generateToken(user.user_id, user.role),
       });
     } else {
       res.status(400).json({ message: 'Invalid user data' });
@@ -63,18 +78,25 @@ const login = async (req, res) => {
     const { username, password } = req.body;
 
     // Check for user
-    const result = await pool.query(`SELECT * FROM "User" WHERE username = $1`, [username]);
+    const result = await pool.query(`SELECT * FROM "Account" WHERE username = $1`, [username]);
     const user = result.rows[0];
 
-    if (user && (await bcrypt.compare(password, user.password))) {
+    if (!user) {
+        return res.status(401).json({ message: 'Invalid username' });
+    }
+    if (user.account_status !== 'ACTIVE') {
+        return res.status(403).json({ message: 'Account is not active' });
+    }
+
+    if (await bcrypt.compare(password, user.password_hash)) {
       res.json({
-        id: user.id,
+        id: user.user_id,
         username: user.username,
         role: user.role,
-        token: generateToken(user.id, user.role),
+        token: generateToken(user.user_id, user.role),
       });
     } else {
-      res.status(401).json({ message: 'Invalid username or password' });
+      res.status(401).json({ message: 'Invalid password' });
     }
   } catch (error) {
     console.error(error);
@@ -87,7 +109,7 @@ const login = async (req, res) => {
 // @access  Admin
 const getAllUsers = async (req, res) => {
   try {
-    const users = await pool.query(`SELECT id, username, role FROM "User"`);
+    const users = await pool.query(`SELECT user_id, username, role FROM "Account"`);
     res.json(users.rows);
   } catch (error) {
     console.error(error);
@@ -95,8 +117,33 @@ const getAllUsers = async (req, res) => {
   }
 };
 
+// @desc    Get current user profile
+// @route   GET /api/auth/profile
+// @access  Private
+const getProfile = async (req, res) => {
+  try {
+    const studentId = req.user.id;
+    const result = await pool.query(
+      `SELECT a.username, a.account_status, a.role, s.name, s.email, s.phone_number 
+       FROM "Account" a
+       JOIN "Student" s ON a.user_id = s.student_id
+       WHERE a.user_id = $1`, [studentId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: 'Profile not found' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Error fetching profile' });
+  }
+}
+
 module.exports = {
   signup,
   login,
   getAllUsers,
+  getProfile
 };

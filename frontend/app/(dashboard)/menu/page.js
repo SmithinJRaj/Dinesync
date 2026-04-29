@@ -95,29 +95,40 @@ export default function MenuPage() {
       </div>
 
       <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-12 ${loading ? 'opacity-50 pointer-events-none' : ''}`}>
-        {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((dayStr, idx) => {
-           const mealsForDay = menu[dayStr] || [];
+        {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((dayStr, idx) => {
+           const sessionsForDay = menu[dayStr] || {};
+           const sessions = ['Breakfast', 'Lunch', 'Snacks', 'Dinner'];
+           const hasMeals = sessions.some(s => sessionsForDay[s] && sessionsForDay[s].length > 0);
+           
            return (
               <div key={idx} className="bg-white rounded-[2rem] p-6 shadow-[0_8px_30px_-15px_rgba(0,0,0,0.04)] border border-transparent hover:border-gray-100 transition-all">
                  <div className="flex justify-between items-center mb-6 border-b border-gray-50 pb-4">
                     <h2 className="text-xl font-bold text-gray-900">{dayStr}</h2>
-                    {mealsForDay.length > 0 && <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">Served</span>}
+                    {hasMeals && <span className="text-[10px] font-bold uppercase tracking-widest text-emerald-600 bg-emerald-50 px-3 py-1 rounded-full">Served</span>}
                  </div>
                  
                  <div className="space-y-6 min-h-[250px]">
-                    {mealsForDay.map((m, i) => (
-                       <div key={i} className="group cursor-pointer">
-                          <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 flex items-center">
-                             {m.mealType}
-                             <span className="w-full h-px bg-gray-100 ml-3 flex-1"></span>
-                          </h3>
-                          <p className="font-bold text-gray-800 text-[15px] group-hover:text-blue-600 transition mb-1">{m.item?.name}</p>
-                          <div className="flex items-center text-[11px] font-bold text-gray-400">
-                             <Zap size={10} className="mr-1 text-yellow-500" /> {Math.floor(Math.random() * 400 + 200)} Kcal
+                    {sessions.map(sessionName => {
+                       const items = sessionsForDay[sessionName] || [];
+                       if (items.length === 0) return null;
+                       return (
+                          <div key={sessionName} className="group mb-4">
+                             <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 flex items-center">
+                                {sessionName}
+                                <span className="w-full h-px bg-gray-100 ml-3 flex-1"></span>
+                             </h3>
+                             {items.map((m, i) => (
+                                 <div key={i} className="mb-2 cursor-pointer">
+                                     <p className="font-bold text-gray-800 text-[15px] group-hover:text-blue-600 transition mb-1">{m.item?.name}</p>
+                                     <div className="flex items-center text-[11px] font-bold text-gray-400">
+                                         <Zap size={10} className="mr-1 text-yellow-500" /> ₹{m.item?.price}
+                                     </div>
+                                 </div>
+                             ))}
                           </div>
-                       </div>
-                    ))}
-                    {mealsForDay.length === 0 && (
+                       )
+                    })}
+                    {!hasMeals && (
                        <div className="h-full flex items-center justify-center pt-10 text-sm text-gray-400 italic">No meals scheduled</div>
                     )}
                  </div>

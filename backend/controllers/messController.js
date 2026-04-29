@@ -10,8 +10,8 @@ const createMess = async (req, res) => {
       return res.status(400).json({ message: 'Name and capacity are required' });
     }
     const result = await pool.query(
-      `INSERT INTO "Mess" (name, capacity) VALUES ($1, $2) RETURNING *`,
-      [name, parseInt(capacity)]
+      `INSERT INTO "Mess" (name, capacity, guest_capacity_per_session) VALUES ($1, $2, $3) RETURNING *`,
+      [name, parseInt(capacity), Math.floor(parseInt(capacity) * 0.1)]
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -26,19 +26,35 @@ const createMess = async (req, res) => {
 const registerMess = async (req, res) => {
   try {
     const { messId } = req.params;
+    const studentId = req.user.id;
+
+    // Fetch ACTIVE BillingCycle
+    const cycleRes = await pool.query(`
+        SELECT cycle_id FROM "BillingCycle"
+        WHERE CURRENT_DATE BETWEEN start_date AND end_date
+        LIMIT 1
+    `);
+    if (cycleRes.rows.length === 0) {
+        return res.status(400).json({ message: 'No active billing cycle found.' });
+    }
+    const cycleId = cycleRes.rows[0].cycle_id;
     
-    // Check if user is already registered to a mess
-    const existingReq = await pool.query(`SELECT * FROM "MessRegistration" WHERE "userId" = $1`, [req.user.id]);
+    // Check if user is already registered for this cycle
+    const existingReq = await pool.query(`
+        SELECT * FROM "MessRegistration" 
+        WHERE student_id = $1 AND cycle_id = $2
+    `, [studentId, cycleId]);
+    
     if (existingReq.rows.length > 0) {
-      return res.status(400).json({ message: 'User already registered to a mess' });
+      return res.status(400).json({ message: 'User already registered for the current billing cycle.' });
     }
 
     const registrationResult = await pool.query(
-      `INSERT INTO "MessRegistration" ("userId", "messId") VALUES ($1, $2) RETURNING *`,
-      [req.user.id, parseInt(messId)]
+      `INSERT INTO "MessRegistration" (student_id, mess_id, cycle_id) VALUES ($1, $2, $3) RETURNING *`,
+      [studentId, parseInt(messId), cycleId]
     );
 
-    const messResult = await pool.query(`SELECT * FROM "Mess" WHERE id = $1`, [parseInt(messId)]);
+    const messResult = await pool.query(`SELECT * FROM "Mess" WHERE mess_id = $1`, [parseInt(messId)]);
     const registration = registrationResult.rows[0];
     registration.mess = messResult.rows[0];
 
@@ -54,7 +70,8 @@ const registerMess = async (req, res) => {
 // @access  User
 const getMesses = async (req, res) => {
   try {
-    const result = await pool.query(`SELECT * FROM "Mess"`);
+    // Return all messes, format id to keep frontend simple if needed (but frontend handles generic or we can map mess_id to id)
+    const result = await pool.query(`SELECT mess_id as id, name, location, capacity, guest_capacity_per_session FROM "Mess"`);
     res.json(result.rows);
   } catch (error) {
     console.error(error);
@@ -67,14 +84,32 @@ const getMesses = async (req, res) => {
 // @access  User
 const getMyRegistration = async (req, res) => {
   try {
-    const regResult = await pool.query(`SELECT * FROM "MessRegistration" WHERE "userId" = $1`, [req.user.id]);
+    const studentId = req.user.id;
+
+    // Fetch ACTIVE BillingCycle
+    const cycleRes = await pool.query(`
+        SELECT cycle_id FROM "BillingCycle"
+        WHERE CURRENT_DATE BETWEEN start_date AND end_date
+        LIMIT 1
+    `);
+    
+    if (cycleRes.rows.length === 0) {
+        return res.json({ registered: false, message: 'No active cycle.' });
+    }
+    const cycleId = cycleRes.rows[0].cycle_id;
+
+    const regResult = await pool.query(`
+        SELECT * FROM "MessRegistration" 
+        WHERE student_id = $1 AND cycle_id = $2
+    `, [studentId, cycleId]);
+    
     const registration = regResult.rows[0];
     
     if (!registration) {
       return res.json({ registered: false });
     }
 
-    const messResult = await pool.query(`SELECT * FROM "Mess" WHERE id = $1`, [registration.messId]);
+    const messResult = await pool.query(`SELECT mess_id as id, name, location FROM "Mess" WHERE mess_id = $1`, [registration.mess_id]);
     res.json({ registered: true, mess: messResult.rows[0] });
   } catch (error) {
     console.error(error);
@@ -87,12 +122,12 @@ const getMyRegistration = async (req, res) => {
 // @access  User
 const resetMonthlyCycle = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const studentId = req.user.id;
     
-    // Purge user's payments & sign-offs & reg to cleanly fake "Next Month"
-    await pool.query(`DELETE FROM "Payment" WHERE "userId" = $1`, [userId]);
-    await pool.query(`DELETE FROM "SignOff" WHERE "userId" = $1`, [userId]);
-    await pool.query(`DELETE FROM "MessRegistration" WHERE "userId" = $1`, [userId]);
+    // For MVP testing reset.
+    await pool.query(`DELETE FROM "Payment" WHERE student_id = $1`, [studentId]);
+    await pool.query(`DELETE FROM "SignOff" WHERE student_id = $1`, [studentId]);
+    await pool.query(`DELETE FROM "MessRegistration" WHERE student_id = $1`, [studentId]);
     
     res.json({ message: 'Cycle cleanly reset' });
   } catch (error) {

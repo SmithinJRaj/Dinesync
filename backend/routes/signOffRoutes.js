@@ -1,10 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { submitSignOff, getSignOffs } = require('../controllers/signOffController');
-const { protect } = require('../middleware/authMiddleware');
+const { protect, userOnly } = require('../middleware/authMiddleware');
 
 router.route('/')
-  .post(protect, submitSignOff)
-  .get(protect, getSignOffs);
+  .post(protect, userOnly, submitSignOff)
+  .get(protect, userOnly, getSignOffs);
 
 module.exports = router;

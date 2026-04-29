@@ -6,15 +6,31 @@ import { Receipt, Download, CreditCard, ShieldCheck, Lock, CheckCircle2, Chevron
 
 export default function FeesPage() {
   const router = useRouter();
-  const [feeData, setFeeData] = useState(null);
+  const [feeRecord, setFeeRecord] = useState(null);
   const [paymentHistory, setPaymentHistory] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [notRegistered, setNotRegistered] = useState(false);
   
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [paymentAmount, setPaymentAmount] = useState('');
   const [toast, setToast] = useState(null);
+
+  const fetchRecords = async () => {
+    const token = localStorage.getItem('token');
+    try {
+       const [feeRes, payRes] = await Promise.all([
+         fetch('http://localhost:5000/api/fees/record', { headers: { 'Authorization': `Bearer ${token}` } }),
+         fetch('http://localhost:5000/api/fees/payments', { headers: { 'Authorization': `Bearer ${token}` } })
+       ]);
+       if(feeRes.ok) setFeeRecord(await feeRes.json());
+       if(payRes.ok) setPaymentHistory(await payRes.json());
+    } catch(err) {
+       console.log(err);
+    } finally {
+       setLoading(false);
+    }
+  };
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -22,30 +38,21 @@ export default function FeesPage() {
       router.push('/login');
       return;
     }
-    
-    Promise.all([
-       fetch('http://localhost:5000/api/fees/my-fee', {
-         headers: { 'Authorization': `Bearer ${token}` }
-       }),
-       fetch('http://localhost:5000/api/fees/payments', {
-         headers: { 'Authorization': `Bearer ${token}` }
-       })
-    ])
-    .then(async ([feeRes, payRes]) => {
-       if (feeRes.status === 403) {
-          setNotRegistered(true);
-          return;
-       }
-       const feePayload = await feeRes.json();
-       const payPayload = await payRes.ok ? await payRes.json() : [];
-       setFeeData(feePayload);
-       setPaymentHistory(payPayload);
-    })
-    .catch(err => console.log('Error fetching records', err))
-    .finally(() => setLoading(false));
+    fetchRecords();
   }, [router]);
 
   const handlePayment = async () => {
+     if(!paymentAmount || isNaN(paymentAmount) || parseFloat(paymentAmount) <= 0) {
+         setToast('Enter a valid amount');
+         setTimeout(() => setToast(null), 3000);
+         return;
+     }
+     if(parseFloat(paymentAmount) > parseFloat(feeRecord.remaining_due)) {
+         setToast(`Cannot pay more than ₹${parseFloat(feeRecord.remaining_due).toFixed(2)}`);
+         setTimeout(() => setToast(null), 3000);
+         return;
+     }
+
      setIsProcessing(true);
      const token = localStorage.getItem('token');
      try {
@@ -55,17 +62,24 @@ export default function FeesPage() {
              'Content-Type': 'application/json',
              'Authorization': `Bearer ${token}` 
           },
-          body: JSON.stringify({ amount: feeData.finalFee || 0 })
+          body: JSON.stringify({ amount: paymentAmount, fee_record_id: feeRecord.fee_record_id })
        });
        
        if (res.ok) {
-          const newPayment = await res.json();
-          // Prepend the new payment to the history locally so it reflects instantly
-          setPaymentHistory([newPayment, ...paymentHistory]);
-          setToast(`Successfully Paid ₹${newPayment.amount.toFixed(2)}`);
+          const payload = await res.json();
+          setPaymentHistory([payload.payment, ...paymentHistory]);
+          setFeeRecord({
+             ...feeRecord, 
+             paid_amount: parseFloat(feeRecord.paid_amount) + parseFloat(paymentAmount),
+             remaining_due: parseFloat(feeRecord.remaining_due) - parseFloat(paymentAmount),
+             payment_status: payload.newStatus
+          });
+          setToast(`Successfully Paid ₹${parseFloat(paymentAmount).toFixed(2)}`);
           setIsModalOpen(false);
+          setPaymentAmount('');
        } else {
-          setToast('Payment simulation failed');
+          const errData = await res.json();
+          setToast(errData.message || 'Payment failed');
        }
      } catch (err) {
        setToast('Network Error processing payment');
@@ -77,27 +91,26 @@ export default function FeesPage() {
 
   if (loading) return <div className="p-10 font-bold text-gray-500">Loading financial records...</div>;
 
-  if (notRegistered) {
+  if (feeRecord?.total_due === 0 && !feeRecord.fee_record_id) {
      return (
         <div className="max-w-[1200px] mt-2 mb-10 pb-10 flex flex-col items-center justify-center pt-20">
-           <div className="w-20 h-20 bg-red-50 rounded-3xl flex items-center justify-center text-red-500 mb-6">
+           <div className="w-20 h-20 bg-red-50 rounded-[2rem] flex items-center justify-center text-red-500 mb-6">
               <Lock size={32} />
            </div>
-           <h1 className="text-3xl font-bold text-gray-900 mb-4">Access Denied</h1>
-           <p className="text-lg text-gray-500 font-medium mb-8">You are not registered to any mess. Please enroll first to view fee breakdowns.</p>
-           <button onClick={() => router.push('/registration')} className="bg-gray-900 text-white font-bold px-8 py-4 rounded-full hover:bg-black transition">
+           <h1 className="text-3xl font-bold text-gray-900 mb-4">No Active Records</h1>
+           <p className="text-lg text-gray-500 font-medium mb-8">No billing records found. Ensure you are registered to a mess in an active cycle.</p>
+           <button onClick={() => router.push('/registration')} className="bg-[#2A2F3D] text-white font-bold px-8 py-4 rounded-full hover:bg-black transition">
               Browse Messes
            </button>
         </div>
      );
   }
 
-  const billAmount = feeData?.finalFee > 0 ? feeData.finalFee.toFixed(2) : '0.00';
+  const remainingRounded = feeRecord ? parseFloat(feeRecord.remaining_due).toFixed(2) : '0.00';
 
   return (
     <div className="max-w-[1200px] mt-2 mb-10 pb-10 relative">
       
-      {/* Toast Notification */}
       {toast && (
         <div className="fixed top-10 right-10 z-[100] bg-gray-900 text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center space-x-3 transition-all animate-bounce">
           <CheckCircle2 size={20} className="text-green-400" />
@@ -105,28 +118,32 @@ export default function FeesPage() {
         </div>
       )}
 
-      {/* Payment Processing Modal Overaly */}
       {isModalOpen && (
          <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 backdrop-blur-sm">
-            <div className="bg-white w-[90%] max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden animate-fade-in relative">
+            <div className="bg-white w-[90%] max-w-md rounded-[2.5rem] shadow-2xl overflow-hidden animate-fade-in relative text-center">
                <button onClick={() => !isProcessing && setIsModalOpen(false)} className="absolute top-6 right-6 text-gray-400 hover:text-gray-900 transition">
                   <X size={20} />
                </button>
                
                <div className="p-10">
-                  <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600 mb-6">
+                  <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600 mb-6 mx-auto">
                      <CreditCard size={30} />
                   </div>
-                  <h2 className="text-2xl font-bold text-gray-900">Confirm Payment</h2>
-                  <p className="text-gray-500 font-medium mt-1 mb-6 text-sm">You are manually processing a simulated billing cycle charge.</p>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-2">Simulate Payment</h2>
+                  <p className="text-gray-500 font-medium text-sm mb-6">Enter an amount to deduct from your remaining total.</p>
                   
-                  <div className="bg-gray-50 rounded-2xl p-6 border border-gray-100 flex justify-between items-center mb-8">
-                     <div>
-                        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Total Amount</p>
-                        <p className="text-3xl font-black text-gray-900 tracking-tighter">₹{billAmount}</p>
-                     </div>
-                     <ShieldCheck size={28} className="text-green-600 opacity-50" />
+                  <div className="bg-gray-50 rounded-2xl p-6 border border-gray-100 flex flex-col justify-center items-center mb-6">
+                     <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Remaining Bound</p>
+                     <p className="text-3xl font-black text-gray-900 tracking-tighter">₹{remainingRounded}</p>
                   </div>
+
+                  <input 
+                     type="number" 
+                     placeholder="Amount e.g. 500" 
+                     className="w-full bg-white border border-gray-200 p-4 rounded-2xl mb-6 text-center font-bold text-lg focus:outline-none focus:ring-2 focus:ring-blue-600"
+                     value={paymentAmount}
+                     onChange={(e) => setPaymentAmount(e.target.value)}
+                  />
 
                   <button 
                      onClick={handlePayment} 
@@ -143,78 +160,71 @@ export default function FeesPage() {
 
       <div className="mb-8 sm:mb-12">
         <h1 className="text-3xl sm:text-[2.75rem] font-bold text-gray-900 leading-tight tracking-tight mb-2">Financial Overview</h1>
-        <p className="text-base sm:text-lg text-gray-500 font-medium w-full sm:w-2/3">Review your ongoing dining subscriptions, process payments, and track your historical invoices.</p>
+        <p className="text-base sm:text-lg text-gray-500 font-medium">Review your ongoing dining subscriptions and process partial or full payments seamlessly.</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
         <div className="lg:col-span-8">
-           <div className="bg-white rounded-[2.5rem] p-10 shadow-[0_8px_30px_-15px_rgba(0,0,0,0.04)] mb-10">
-              <h2 className="text-2xl font-bold text-gray-900 mb-8">Current Cycle Breakdown</h2>
+           <div className="bg-white rounded-[2.5rem] p-10 shadow-[0_8px_30px_-15px_rgba(0,0,0,0.04)] mb-10 border border-transparent">
+              <div className="flex justify-between items-center mb-8">
+                 <h2 className="text-2xl font-bold text-gray-900">Current Cycle Breakdown</h2>
+                 <span className={`px-4 py-1.5 uppercase font-black text-[10px] tracking-widest rounded-full ${feeRecord?.payment_status === 'PAID' ? 'bg-[#D1FAE5] text-[#065F46]' : feeRecord?.payment_status === 'PARTIAL' ? 'bg-amber-100 text-amber-800' : 'bg-red-50 text-red-600'}`}>
+                    {feeRecord?.payment_status}
+                 </span>
+              </div>
               
               <div className="space-y-6">
-                 {feeData?.basePrice > 0 && (
+                 {parseFloat(feeRecord?.base_charge) > 0 && (
                    <div className="flex justify-between items-center pb-6 border-b border-gray-100">
-                      <p className="font-semibold text-gray-700">Base Subscription (Current Tier)</p>
-                      <p className="font-bold text-gray-900 text-lg">₹{feeData.basePrice.toFixed(2)}</p>
+                      <p className="font-semibold text-gray-700">Base Subscription Charge</p>
+                      <p className="font-bold text-gray-900 text-lg">₹{parseFloat(feeRecord.base_charge).toFixed(2)}</p>
                    </div>
                  )}
-                 {feeData?.deduction > 0 && (
-                   <div className="flex justify-between items-center pb-6 border-b border-gray-100">
-                      <div>
-                         <p className="font-semibold text-gray-700">Sign-off Deductions</p>
-                         <p className="text-xs text-gray-400 font-medium">{feeData.signOffDays || 0} valid days registered</p>
-                      </div>
-                      <p className="font-bold text-green-600 text-lg">-₹{feeData.deduction.toFixed(2)}</p>
-                   </div>
-                 )}
-                 {feeData?.guestFees > 0 && (
+                 {parseFloat(feeRecord?.addon_total) > 0 && (
                    <div className="flex justify-between items-center pb-6 border-b border-gray-100">
                       <div>
-                         <p className="font-semibold text-gray-700">Guest Services Total</p>
-                         <p className="text-xs text-gray-400 font-medium">Accumulated charges for guest access</p>
+                         <p className="font-semibold text-gray-700">Add-On Transactions</p>
+                         <p className="text-xs text-gray-400 font-medium">Items purchased independently</p>
                       </div>
-                      <p className="font-bold text-gray-900 text-lg">+₹{feeData.guestFees.toFixed(2)}</p>
+                      <p className="font-bold text-gray-900 text-lg">+₹{parseFloat(feeRecord.addon_total).toFixed(2)}</p>
                    </div>
                  )}
-                 {(feeData?.basePrice === 0 && feeData?.guestFees === 0) && (
+                 {parseFloat(feeRecord?.signoff_deduction) > 0 && (
                    <div className="flex justify-between items-center pb-6 border-b border-gray-100">
-                      <div>
-                         <p className="font-semibold text-gray-700">No active charges</p>
-                         <p className="text-xs text-gray-400 font-medium">You are not registered to any mess and have 0 guest charges.</p>
-                      </div>
-                      <p className="font-bold text-gray-900 text-lg">₹0.00</p>
+                      <p className="font-semibold text-gray-700">Sign-off Deductions</p>
+                      <p className="font-bold text-green-600 text-lg">-₹{parseFloat(feeRecord.signoff_deduction).toFixed(2)}</p>
                    </div>
                  )}
-                 <div className="flex justify-between items-center pt-4">
-                    <p className="font-bold text-gray-400 uppercase tracking-widest text-sm">Monthly Total</p>
-                    <p className="font-black text-gray-900 text-3xl">₹{billAmount}</p>
+                 <div className="flex justify-between items-center pt-2 pb-6 border-b border-gray-100">
+                    <p className="font-bold text-gray-400 tracking-widest text-sm">Gross Total</p>
+                    <p className="font-black text-gray-900 text-2xl">₹{parseFloat(feeRecord?.total_due).toFixed(2)}</p>
+                 </div>
+                 <div className="flex justify-between items-center pt-2">
+                    <p className="font-bold text-gray-400 tracking-widest text-sm">Paid Total</p>
+                    <p className="font-black text-blue-600 text-2xl">-₹{parseFloat(feeRecord?.paid_amount).toFixed(2)}</p>
                  </div>
               </div>
            </div>
 
-           <h3 className="text-2xl font-bold text-gray-900 mb-6">Payment History</h3>
+           <h3 className="text-2xl font-bold text-gray-900 mb-6">Verified Payments Logs</h3>
            <div className="space-y-4">
               {paymentHistory.length === 0 ? (
                  <div className="bg-white rounded-2xl p-10 text-center text-gray-400 border border-gray-50 font-medium text-sm">
                     No verified payments have been logged yet.
                  </div>
               ) : paymentHistory.map((inv) => (
-                 <div key={inv.id} className="bg-white rounded-2xl p-5 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.03)] border border-gray-50 flex justify-between items-center group cursor-pointer hover:border-blue-100 transition">
+                 <div key={inv.payment_id} className="bg-white rounded-2xl p-5 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.03)] border border-gray-50 flex justify-between items-center group">
                     <div className="flex items-center space-x-4">
-                       <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-500 group-hover:bg-blue-50 group-hover:text-blue-600 transition">
+                       <div className="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-500">
                           <Receipt size={18} />
                        </div>
                        <div>
-                          <p className="font-semibold text-gray-800">Verified Web Transaction</p>
-                          <p className="text-xs text-gray-400 font-medium">TXN-{inv.id.toString().padStart(5, '0')}</p>
+                          <p className="font-semibold text-gray-800">Verified Transfer</p>
+                          <p className="text-xs text-gray-400 font-medium">TXN-{inv.payment_id.toString().padStart(5, '0')}</p>
                        </div>
                     </div>
                     <div className="flex items-center space-x-8">
-                       <p className="font-bold text-gray-900">₹{inv.amount.toFixed(2)}</p>
-                       <span className="px-3 py-1 bg-[#D1FAE5] text-[#065F46] text-[9px] font-black uppercase rounded-md tracking-widest">
-                          SUCCESS
-                       </span>
-                       <Download size={18} className="text-gray-300 hover:text-blue-500" />
+                       <p className="font-black text-gray-900">₹{parseFloat(inv.amount).toFixed(2)}</p>
                     </div>
                  </div>
               ))}
@@ -222,24 +232,20 @@ export default function FeesPage() {
         </div>
 
         <div className="lg:col-span-4 space-y-8">
-           <div className={`rounded-[2.5rem] p-10 flex flex-col justify-between shadow-[0_8px_30px_-15px_rgba(0,0,0,0.02)] border border-transparent ${feeData?.finalFee <= 0 ? 'bg-[#ECFDF5]' : 'bg-[#FCEBEA]'}`}>
+           <div className={`rounded-[2.5rem] p-10 flex flex-col justify-between shadow-[0_8px_30px_-15px_rgba(0,0,0,0.02)] border border-transparent ${parseFloat(feeRecord?.remaining_due) <= 0 ? 'bg-[#ECFDF5]' : 'bg-[#FCEBEA]'}`}>
               <div>
-                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-white mb-8 shadow-md ${feeData?.finalFee <= 0 ? 'bg-[#10B981]' : 'bg-[#FF7B7B]'}`}>
-                   <CreditCard size={28} className={feeData?.finalFee <= 0 ? "fill-green-400" : "fill-red-400"} />
+                <div className={`w-14 h-14 rounded-[1.5rem] flex items-center justify-center text-white mb-8 shadow-md ${parseFloat(feeRecord?.remaining_due) <= 0 ? 'bg-[#10B981]' : 'bg-[#FF7B7B]'}`}>
+                   <CreditCard size={28} className={parseFloat(feeRecord?.remaining_due) <= 0 ? "fill-green-400" : "fill-red-400"} />
                 </div>
-                <h3 className="text-2xl font-bold text-gray-800 mb-2">{feeData?.finalFee <= 0 ? 'Dues Cleared' : 'Total Outstanding'}</h3>
-                <p className="text-[15px] text-gray-500 font-medium mb-8">Maintenance & Mess charges</p>
+                <h3 className="text-2xl font-bold text-gray-800 mb-2">{parseFloat(feeRecord?.remaining_due) <= 0 ? 'Dues Cleared' : 'Remaining Due'}</h3>
+                <p className="text-[15px] text-gray-500 font-medium mb-8">{feeRecord?.cycle_name || 'Billing Cycle'}</p>
                 
-                <p className={`text-5xl sm:text-6xl font-black tracking-tighter ${feeData?.finalFee <= 0 ? 'text-[#047857]' : 'text-[#b93737]'}`}>
-                  ₹{billAmount}
+                <p className={`text-5xl sm:text-6xl font-black tracking-tighter ${parseFloat(feeRecord?.remaining_due) <= 0 ? 'text-[#047857]' : 'text-[#b93737]'}`}>
+                  ₹{remainingRounded}
                 </p>
-                <div className="mt-4 flex items-center space-x-2 bg-white/40 px-4 py-2 rounded-lg w-max shadow-sm">
-                   <ShieldCheck size={16} className={feeData?.finalFee <= 0 ? 'text-green-800' : 'text-red-800'} />
-                   <p className={`text-xs font-bold tracking-wide ${feeData?.finalFee <= 0 ? 'text-green-900' : 'text-red-900'}`}>SECURE SSL CHECKOUT</p>
-                </div>
               </div>
               
-              {feeData?.finalFee <= 0 ? (
+              {parseFloat(feeRecord?.remaining_due) <= 0 ? (
                   <button disabled className="w-full mt-10 bg-[#A7F3D0] text-[#065F46] text-[15px] font-bold py-5 rounded-full shadow-inner cursor-not-allowed">
                      Cycle Fully Paid
                   </button>
@@ -248,7 +254,7 @@ export default function FeesPage() {
                      onClick={() => setIsModalOpen(true)}
                      className="w-full mt-10 bg-[#2A2F3D] hover:bg-black text-white text-[15px] font-bold py-5 rounded-full transition shadow-xl shadow-gray-900/10"
                   >
-                    Pay Now
+                    Custom Payment
                   </button>
               )}
            </div>

@@ -15,11 +15,14 @@ const protect = async (req, res, next) => {
       // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       
-      const result = await pool.query(`SELECT id, username, role FROM "User" WHERE id = $1`, [decoded.id]);
+      const result = await pool.query(`SELECT user_id as id, username, role, account_status FROM "Account" WHERE user_id = $1`, [decoded.id]);
       const user = result.rows[0];
 
       if (!user) {
          return res.status(401).json({ message: 'Not authorized, user not found' });
+      }
+      if (user.account_status !== 'ACTIVE') {
+         return res.status(403).json({ message: 'Not authorized, account inactive' });
       }
 
       // Add user info to request
@@ -45,4 +48,12 @@ const adminOnly = (req, res, next) => {
   }
 };
 
-module.exports = { protect, adminOnly };
+const userOnly = (req, res, next) => {
+  if (req.user && req.user.role === 'USER') {
+    next();
+  } else {
+    res.status(403).json({ message: 'Not authorized. Routine solely mapped to standard users.' });
+  }
+};
+
+module.exports = { protect, adminOnly, userOnly };

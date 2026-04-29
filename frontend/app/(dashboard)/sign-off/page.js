@@ -39,6 +39,23 @@ export default function SignOffPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (start <= today) {
+      setToast('Start date must be after today');
+      setTimeout(() => setToast(null), 3000);
+      return;
+    }
+    if (end < start) {
+      setToast('End date cannot be before start date');
+      setTimeout(() => setToast(null), 3000);
+      return;
+    }
+
     setLoading(true);
     const token = localStorage.getItem('token');
     
@@ -50,8 +67,8 @@ export default function SignOffPage() {
           'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
-          startDate: new Date(startDate).toISOString(),
-          endDate: new Date(endDate).toISOString()
+          startDate: start.toISOString(),
+          endDate: end.toISOString()
         })
       });
       const data = await res.json();
@@ -181,7 +198,7 @@ export default function SignOffPage() {
                     </div>
                  ) : (
                     signOffs.map(so => (
-                       <div key={so.id} className="bg-white rounded-2xl p-5 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.03)] border border-gray-50 flex justify-between items-center">
+                       <div key={so.signoff_id} className="bg-white rounded-2xl p-5 shadow-[0_2px_10px_-4px_rgba(0,0,0,0.03)] border border-gray-50 flex justify-between items-center">
                           <div>
                              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 flex items-center">
                                {formatDate(so.startDate)} <ArrowRight size={10} className="mx-2" /> {formatDate(so.endDate)}

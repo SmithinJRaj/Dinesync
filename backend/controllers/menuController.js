@@ -25,17 +25,16 @@ const createMenuItem = async (req, res) => {
 // @access  Admin
 const createMenuSchedule = async (req, res) => {
   try {
-    const { messId, day, mealType, itemId } = req.body;
-    if (!messId || !day || !mealType || !itemId) {
-      return res.status(400).json({ message: 'All fields (messId, day, mealType, itemId) are required' });
+    const { messId, cycleId, itemId } = req.body;
+    if (!messId || !cycleId || !itemId) {
+      return res.status(400).json({ message: 'All fields (messId, cycleId, itemId) are required' });
     }
     const scheduleResult = await pool.query(
-      `INSERT INTO "MenuSchedule" ("messId", day, "mealType", "itemId") VALUES ($1, $2, $3, $4) RETURNING *`,
-      [parseInt(messId), day, mealType, parseInt(itemId)]
+      `INSERT INTO "MenuSchedule" (mess_id, cycle_id, item_id) VALUES ($1, $2, $3) RETURNING *`,
+      [parseInt(messId), parseInt(cycleId), parseInt(itemId)]
     );
     
-    // Include the item data to match Prisma's "include: { item: true }" behavior
-    const itemResult = await pool.query(`SELECT * FROM "MenuItem" WHERE id = $1`, [parseInt(itemId)]);
+    const itemResult = await pool.query(`SELECT * FROM "MenuItem" WHERE item_id = $1`, [parseInt(itemId)]);
     const schedule = scheduleResult.rows[0];
     schedule.item = itemResult.rows[0];
 
@@ -51,50 +50,69 @@ const createMenuSchedule = async (req, res) => {
 // @access  User
 const getMenu = async (req, res) => {
   try {
-    const userId = req.user.id;
+    const studentId = req.user.id;
     let targetMessId = req.query.messId ? parseInt(req.query.messId) : null;
     
+    // Attempt to resolve mess id if not explicitly passed
     if (!targetMessId) {
-      const registrationResult = await pool.query(`SELECT * FROM "MessRegistration" WHERE "userId" = $1`, [userId]);
-      const registration = registrationResult.rows[0];
+      const cycleRes = await pool.query(`
+        SELECT cycle_id FROM "BillingCycle"
+        WHERE CURRENT_DATE BETWEEN start_date AND end_date
+        LIMIT 1
+      `);
+      if (cycleRes.rows.length > 0) {
+          const registrationResult = await pool.query(`
+            SELECT mess_id FROM "MessRegistration" 
+            WHERE student_id = $1 AND cycle_id = $2
+          `, [studentId, cycleRes.rows[0].cycle_id]);
+          
+          if (registrationResult.rows.length > 0) {
+             targetMessId = registrationResult.rows[0].mess_id;
+          }
+      }
 
-      if (registration) {
-         targetMessId = registration.messId;
-      } else {
-         const firstMessResult = await pool.query(`SELECT id FROM "Mess" ORDER BY id ASC LIMIT 1`);
-         targetMessId = firstMessResult.rows[0]?.id || 1;
+      if (!targetMessId) {
+          const firstMessResult = await pool.query(`SELECT mess_id FROM "Mess" ORDER BY mess_id ASC LIMIT 1`);
+          targetMessId = firstMessResult.rows[0]?.mess_id || 1;
       }
     }
 
     const rawMenuResult = await pool.query(`
-      SELECT ms.*, mi.name as "itemName", mi.price as "itemPrice" 
+      SELECT 
+        mc.day_of_week, 
+        mc.meal_session, 
+        mi.item_id, 
+        mi.name as "itemName", 
+        mi.price as "itemPrice" 
       FROM "MenuSchedule" ms
-      JOIN "MenuItem" mi ON ms."itemId" = mi.id
-      WHERE ms."messId" = $1
+      JOIN "MenuCycle" mc ON ms.cycle_id = mc.cycle_id
+      JOIN "MenuItem" mi ON ms.item_id = mi.item_id
+      WHERE ms.mess_id = $1
     `, [targetMessId]);
+
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const sessions = ['Breakfast', 'Lunch', 'Snacks', 'Dinner'];
+    const groupedMenu = {};
     
-    const rawMenu = rawMenuResult.rows.map(row => {
-       return {
-          id: row.id,
-          messId: row.messId,
-          day: row.day,
-          mealType: row.mealType,
-          itemId: row.itemId,
-          item: {
-             id: row.itemId,
-             name: row.itemName,
-             price: row.itemPrice
-          }
-       };
+    // Initialize structure
+    days.forEach(d => {
+        groupedMenu[d] = {};
+        sessions.forEach(s => {
+            groupedMenu[d][s] = [];
+        });
     });
 
-    const groupedMenu = {};
-    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    days.forEach(d => groupedMenu[d] = []);
-
-    rawMenu.forEach(entry => {
-       if (!groupedMenu[entry.day]) groupedMenu[entry.day] = [];
-       groupedMenu[entry.day].push(entry);
+    rawMenuResult.rows.forEach(row => {
+        if (groupedMenu[row.day_of_week] && groupedMenu[row.day_of_week][row.meal_session]) {
+            groupedMenu[row.day_of_week][row.meal_session].push({
+                meal_session: row.meal_session,
+                item: {
+                    id: row.item_id,
+                    name: row.itemName,
+                    price: row.itemPrice
+                }
+            });
+        }
     });
 
     res.json({ schedule: groupedMenu, messId: targetMessId });
